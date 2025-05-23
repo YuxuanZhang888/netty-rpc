@@ -1,6 +1,7 @@
 package com.yuxuan.client.handler;
 
 import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.yuxuan.client.param.Response;
 import com.yuxuan.client.core.DefaultFuture;
 import io.netty.channel.ChannelHandlerContext;
@@ -14,6 +15,7 @@ public class SimpleClientHandler extends ChannelInboundHandlerAdapter {
             return;
         }
         DefaultFuture.receive(JSONArray.parseObject(msg.toString(), Response.class));
+        System.out.println("接收服务器返回数据" + JSONObject.toJSONString(msg));
     }
 
     @Override

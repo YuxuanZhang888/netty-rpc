@@ -1,9 +1,12 @@
 package com.yuxuan.client.core;
 
 import com.alibaba.fastjson.JSONObject;
+import com.yuxuan.client.constant.Constants;
 import com.yuxuan.client.param.ClientRequest;
 import com.yuxuan.client.param.Response;
 import com.yuxuan.client.handler.SimpleClientHandler;
+import com.yuxuan.client.zk.ServerWatcher;
+import com.yuxuan.client.zk.ZookeeperFactory;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
@@ -16,14 +19,17 @@ import io.netty.handler.codec.DelimiterBasedFrameDecoder;
 import io.netty.handler.codec.Delimiters;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.api.CuratorWatcher;
+
+import java.util.List;
 
 
 public class TcpClient {
-    static final Bootstrap bootstrap = new Bootstrap();
+    public static final Bootstrap bootstrap = new Bootstrap();
     static final EventLoopGroup workGroup = new NioEventLoopGroup();
     static ChannelFuture f = null;
-    static final String host = "localhost";
-    static final int port = 8080;
+
 
     static {
         bootstrap.group(workGroup);
@@ -38,15 +44,34 @@ public class TcpClient {
                 socketChannel.pipeline().addLast(new StringEncoder());
             }
         });
+        CuratorFramework client = ZookeeperFactory.create();
         try {
-            f = bootstrap.connect(host, port).sync();
-        } catch (InterruptedException e) {
+            List<String> serverPaths = client.getChildren().forPath(Constants.SERVER_PATH);
+
+            CuratorWatcher watcher = new ServerWatcher();
+            client.getChildren().usingWatcher(watcher).forPath(Constants.SERVER_PATH);
+
+            for (String serverPath : serverPaths) {
+                String[] strs = serverPath.split("#");
+                int weight = Integer.parseInt(strs[2]);
+                if (weight > 0) {
+                    for (int w = 0; w <= weight; w++) {
+                        ChannelManager.realServerPath.add(strs[0] + "#" + strs[1]);
+                        ChannelFuture channelFuture = bootstrap.connect(strs[0], Integer.parseInt(strs[1]));
+                        ChannelManager.add(channelFuture);
+                    }
+                }
+            }
+
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
 
     }
 
+
     public static Response send(ClientRequest request) {
+        f = ChannelManager.get(ChannelManager.position);
         f.channel().writeAndFlush(JSONObject.toJSONString(request));
         f.channel().writeAndFlush("\r\n");
         DefaultFuture df = new DefaultFuture(request);
